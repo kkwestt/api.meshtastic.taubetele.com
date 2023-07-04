@@ -1,8 +1,6 @@
 const mqtt = require('mqtt')
 const servers = require('./servers.js')
 
-console.log(servers)
-
 const devices = {}
 
 const callbacks = (server) => ({
@@ -81,4 +79,4 @@ app.get('/', (req, res) => {
   res.json(devices)
 })
 
-app.listen(80)
+app.listen(80) // What about .env me or config.js me, hah?
