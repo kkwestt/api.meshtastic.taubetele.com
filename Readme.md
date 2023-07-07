@@ -11,7 +11,7 @@ cat servers.js
 ```
 
 ```js
-module.exports.servers = [
+module.exports = [
   {
     address: 'mqtt://admin:password@address.com',
     name: 'address.com'

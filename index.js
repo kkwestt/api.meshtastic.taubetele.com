@@ -19,8 +19,9 @@ const callbacks = (server) => ({
     let parsed
     try {
       parsed = JSON.parse(buffer.toString())
-      console.debug(parsed)
+      // console.debug(parsed)
     } catch (any) {
+      console.debug(buffer.toString());
       // console.debug('Cant parse message, skipping')
       // console.debug(buffer.toString())
       return false
