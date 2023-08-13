@@ -2,12 +2,51 @@
 const mqtt = require('mqtt')
 const servers = require('./servers.js')
 const protobuf = require('protobufjs')
+const fs = require('fs')
+const path = require('path')
 
 const devices = {}
 
+const root = new protobuf.Root()
+
+const protoDirectory = './protobufs/meshtastic'
+
+fs.readdirSync(protoDirectory).forEach(file => {
+  if (file.endsWith('.proto')) {
+    console.log('Reading', file)
+    const filePath = path.join(protoDirectory, file)
+    const content = fs.readFileSync(filePath, 'utf-8')
+    protobuf.parse(content, root)
+  }
+})
+
+const protobufTryParse = (buffer) => {
+  let message
+
+  for (const type of Object.keys(root.nested.meshtastic)) {
+    let MessageType
+    try {
+      MessageType = root.lookupType(`meshtastic.${type}`)
+    } catch {
+      continue
+    }
+
+    try {
+      message = MessageType.decode(buffer)
+      // console.log('Decoded using type:', type)
+      return {
+        message,
+        type
+      }
+    } catch (error) {
+    // Decoding failed, try the next type
+    }
+  }
+}
+
 const callbacks = (server) => ({
   connect: (client) => () => {
-    // console.debug(`Trying to connect to ${server.name}`)
+    console.debug(`Trying to connect to ${server.name}`)
     client.subscribe('#', (err) => {
       if (err) {
         throw err
@@ -16,87 +55,82 @@ const callbacks = (server) => ({
     })
   },
   message: (client) => (topic, buffer) => {
-    // console.debug(`Got message at ${server.name}'s`)
-
-    let parsed
-    try {
-      parsed = JSON.parse(buffer.toString())
-      // console.debug('---')
-      // console.debug(parsed)
-    } catch (any) {
-      // console.debug('---')
-
-      // protobuf.load('./protobufs/meshtastic/mesh.proto', function (err, root) {
-      //   if (err) {
-      //     console.error('Error loading .proto file:', err)
-      //     return
-      //   }
-      //   try {
-      //     const ExampleMessage = root.lookupType('meshtastic.Position')
-      //     const decodedMessage = ExampleMessage.decode(buffer)
-      //     console.log(decodedMessage)
-      //   } catch (any) { }
-      // })
-
-      protobuf.load('./protobufs/meshtastic/mqtt.proto', function (err, root) {
-        if (err) {
-          console.error('Error loading .proto file:', err)
-          return
-        }
-        try {
-          const ExampleMessage = root.lookupType('meshtastic.ServiceEnvelope')
-          const decodedMessage = ExampleMessage.decode(buffer)
-          console.log(decodedMessage)
-        } catch (any) { }
-      })
-
-      // console.debug('Cant parse message, skipping')
-      // console.debug(buffer.toString())
-      try { // throw new Error()
-      } catch (any) {
-        console.log(any.message ? any.message : any)
-      }
-      return false
-    }
-
-    if (!parsed.from) {
-      // console.debug('No `from` present in message', parsed)
-      return false
-    }
-
-    if (!parsed.type) {
-      // console.debug('No `type` present in message', parsed)
-      return false
-    }
-
-    if (!devices[parsed.from]) {
-      devices[parsed.from] = { [parsed.type]: parsed, server: server.name }
-    } else if (parsed?.payload?.temperature) {
-      devices[parsed.from].telemetry2 = parsed
+    if (buffer[0] === 0x7b) {
+      // console.log('This buffer is JSON')
+      // TODO: buffer -> struct -> action
     } else {
-      devices[parsed.from][parsed.type] = parsed
-    }
-    devices[parsed.from].timestamp = parsed.timestamp
+      // TODO: buffer -> struct -> action
+      // console.log('This buffer is POSSIBLY protobuf')
 
-    if (!devices[parsed.from].mqtt && parsed?.payload?.id == parsed.sender) {
-      // console.debug(`Sender ${parsed.sender}`)
-      devices[parsed.from].mqtt = 'online'
+      const parsed = protobufTryParse(buffer)
+
+      if (!parsed) {
+        console.log('Schema is nor resolved')
+        return false
+      }
+
+      const { message, type } = parsed
+      console.log(message, type)
     }
 
-    // {"channel":0,"from":-1812372104,"id":383448021,"payload":{"text":"\u0000"},"sender":"!93f96578","timestamp":1688759976,"to":-1,"type":"text"}
+    // let parsed
+    // try {
+    //   parsed = JSON.parse(buffer.toString())
+    // } catch (any) {
+    //   try {
+    //     const message = protobufRoots.mqtt.lookupType('meshtastic.ServiceEnvelope')
+    //     const decodedMessage = message.decode(buffer)
 
-    if (parsed.type == 'text') {
-      console.debug(`TEXT: ${parsed.from}: ${parsed.payload.text}`)
-    }
+    //     // console.log('Message', decodedMessage)
+
+    //     if (decodedMessage?.packet?.decoded?.payload) {
+    //       const payload = decodedMessage.packet.decoded.payload
+    //       console.log('Payload', payload.toString())
+    //     }
+
+    //     if (decodedMessage?.packet?.encrypted) {
+    //       console.log('Payload is encrypted, TBI')
+    //     }
+    //   } catch (any) {
+    //     // console.log('Loaded proto is not resolving this message')
+    //     return false
+    //   }
+    //   return false
+    // }
+
+    // if (!parsed.from) {
+    //   return false
+    // }
+
+    // if (!parsed.type) {
+    //   return false
+    // }
+
+    // if (!devices[parsed.from]) {
+    //   devices[parsed.from] = { [parsed.type]: parsed, server: server.name }
+    // } else if (parsed?.payload?.temperature) {
+    //   devices[parsed.from].telemetry2 = parsed
+    // } else {
+    //   devices[parsed.from][parsed.type] = parsed
+    // }
+    // devices[parsed.from].timestamp = parsed.timestamp
+
+    // if (!devices[parsed.from].mqtt && parsed?.payload?.id === parsed.sender) {
+    //   devices[parsed.from].mqtt = 'online'
+    // }
+
+    // // {"channel":0,"from":-1812372104,"id":383448021,"payload":{"text":"\u0000"},"sender":"!93f96578","timestamp":1688759976,"to":-1,"type":"text"}
+
+    // if (parsed.type === 'text') {
+    //   console.debug(`TEXT: ${parsed.from}: ${parsed.payload.text}`)
+    // }
   }
 })
 
 servers.forEach(server => {
-  // console.debug(`Trying to configure ${server.name}`)
   const client = mqtt.connect(server.address)
   const serverCallbacks = callbacks(server)
   Object.keys(serverCallbacks).forEach(callback => {
-    // console.debug(`Adjusting callback '${callback}' to server '${server.name}'`)
     client.on(callback, serverCallbacks[callback](client))
   })
 })
@@ -108,7 +142,6 @@ app.use(cors({
   origin: (origin, callback) => {
     callback(null, origin || '*')
   },
-  // credentials: true,
   allowedHeaders: ['Content-Type']
 }))
 
