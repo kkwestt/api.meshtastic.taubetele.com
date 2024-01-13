@@ -80,16 +80,16 @@ async function connectToMeshtastic () {
 
     const { from } = event
 
-    redis.hGetAll(`device:${from}`).then(answer => {
-      console.log(answer.user)
-      console.log(' ')
-    })
+    // redis.hGetAll(`device:${from}`).then(answer => {
+    //   console.log(answer.user)
+    //   console.log(' ')
+    // })
 
-    if (eventName === 'onMessagePacket') {
-      console.log('timestamp:', new Date().toLocaleTimeString(), new Date().toLocaleDateString())
-      console.log('Message from:', event.from, event.data)
-    }
-    return
+    // if (eventName === 'onMessagePacket') {
+    //   console.log('timestamp:', new Date().toLocaleTimeString(), new Date().toLocaleDateString())
+    //   console.log('Message from:', event.from, event.data)
+    // }
+    // return
 
     // const { from } = event
 
