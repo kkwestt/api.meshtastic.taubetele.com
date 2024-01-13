@@ -1,5 +1,5 @@
 # servers configuration
-servers.js
+# servers.js
 
 # Logs
 logs
@@ -95,7 +95,7 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+# dist
 
 # Gatsby files
 .cache/
