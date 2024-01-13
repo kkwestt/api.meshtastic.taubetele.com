@@ -82,11 +82,11 @@ const connectToMqtt = (server, callback) => {
   })
 
   client.on('error', (error) => {
-    // console.error(error);
+    // console.error(error)
   })
 }
 
-export const listenToEvents = (serversConfig, callback) => {
+export const listenToEvents = async (serversConfig, callback) => {
   serversConfig.forEach(server => {
     switch (server.type) {
       case 'mqtt': connectToMqtt(server, callback); break

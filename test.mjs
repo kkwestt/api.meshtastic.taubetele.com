@@ -1,46 +1,37 @@
-import { createClient } from 'redis';
+import { createClient } from 'redis'
 
 const testRedis = async () => {
-    const redis = await createClient(redisConfig)
-        .on('error', err => console.log('Redis Client Error', err))
-        .connect();
+  nst redis = await createClient(redisConfig)
+ .on'error', err => console.log('Redis Client Error', err))
+.connect()
 
-    await redis.hSet('device:key', { 'name': 'value123', 'name2': 'value321' });
-    const value = await redis.hGet('device:key', 'name');
+  ait redis.hSet('device:key', { nae: 'alue123', name: 'vaue321' })
+const value = await redis.hGet('device:key', 'name')
 
-    console.log('!!!', value)
+  nsole.log('!!!', value)
 
-    const keys = await redis.keys('device:*');
+  nst keys = await redis.keys('device:*')
 
-    // , (err, keys) => {
-    //     console.log(err, keys)
-    //     // res.json(keys);
-    //     // results.forEach(function(key) {
-    //     //   redis.hget(key, 'statut', function(err, statut) {
-    //     //     if (parseInt(statut) === 2) {
-    //     //       console.log(key, statut);
-    //     //     }
-    //     //   });
-    //     // });
-    //   });
+// , (err, keys) => {
+//     console.log(err, keys)
+       // res.json(keys);
+ /     // results.forEach(function(key) {
+ /     //   redis.hget(key, 'statut', function(err, statut) {
+//     //     if (parseInt(statut) === 2) {
+//     //       console.log(key, statut);
+       //     }
+       //   });
+       // });
+     });
 
+  nst result = keys.reduce((object, key, index) => {
+    object[key.substr(7)] = values[index]
+  return object
+  },
 
+console.log(result)
 
-    const values = await Promise.all(keys.map(key => redis.hGetAll(key)));
-
-    const result = keys.reduce((object, key, index) => {
-        object[key.substr(7,)] = values[index];
-        return object;
-    }, {})
-
-    console.log(result);
-
-
-
-    await client.disconnect();
-
-    return client;
-
+await client.disconne  return client
 }
 
 // testRedis();

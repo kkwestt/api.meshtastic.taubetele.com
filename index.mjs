@@ -3,15 +3,28 @@ import express from 'express'
 
 import cors from 'cors'
 
-import { redisConfig, servers } from './config.mjs'
+import { api, redisConfig, servers } from './config.mjs'
 import { listenToEvents } from './listenToEvents.mjs'
 import { getEventType } from './getEventType.mjs'
+
+import { Telegraf } from 'telegraf'
+// import { message } from 'telegraf/filters'
+
+const bot = new Telegraf(api.BOT_TOKEN)
+bot.start((ctx) => ctx.reply('Welcome'))
+// bot.help((ctx) => ctx.reply('Send me a sticker'))
+// bot.on(message('sticker'), (ctx) => ctx.reply('👍'))
+// bot.hears('hi', (ctx) => ctx.reply('Hey there'))
+bot.launch()
+
+// Enable graceful stop
+process.once('SIGINT', () => bot.stop('SIGINT'))
+process.once('SIGTERM', () => bot.stop('SIGTERM'))
 
 const connectToRedis = async () => {
   const client = await createClient(redisConfig)
     .on('error', err => console.log('Redis Client Error', err))
     .connect()
-
   return client
 }
 
@@ -61,65 +74,55 @@ function startServer (redis) {
 // закодированные сообщения не попадают в callback
 
 async function connectToMeshtastic () {
+  let message = ''
+  let preMessage = ''
   const redis = await connectToRedis()
 
   listenToEvents(servers, (server, channel, user, eventName, eventType, event) => {
     const type = getEventType(eventName, eventType)
 
+    console
     if (!type) {
       return
     }
 
-    console.log(new Date().toLocaleTimeString(), new Date().toLocaleDateString())
     // console.log(server.type, server.address, channel, user, eventName, eventType, JSON.stringify(event, null, 2))
     // console.log(server.address, eventName, eventType)
 
-    // console.log('from:', event.from, ' - ', event.data)
-
-    // console.log( await redis.hGetAll('device:' + event.from))
-
     const { from } = event
 
-    redis.hGetAll(`device:${from}`).then(answer => {
-      console.log(answer.user.data.longName)
-      console.log(' ')
-    })
-
-    // server: 'meshtastic.taubetele.com'
-
-    if (eventName === 'onMessagePacket') {
-      console.log('timestamp:', new Date().toLocaleTimeString(), new Date().toLocaleDateString())
-      console.log('Message from:', event.from, event.data)
+    try {
+      if (eventName === 'onMessagePacket') {
+        redis.hGetAll(`device:${from}`).then(answer => {
+          message = event.data + event.from
+          if (message === preMessage) {
+            return
+          }
+          preMessage = message
+          console.log(new Date().toLocaleTimeString(), new Date().toLocaleDateString(), JSON.parse(answer.user).data.longName, '(', event.from, '):', event.data)
+          if (server.telegram) bot.telegram.sendMessage(api.CHANNEL_ID, 'MESH ✉️ ' + JSON.parse(answer.user).data.longName + ': ' + event.data)
+        })
+      }
+    } catch (err) {
+      console.log(err)
+      return
     }
-    return
 
-    // const { from } = event
+    return
 
     redis.hSet(`device:${from}`,
       {
         server: server.name,
-        // timestamp: event.rxTime.toISOString(),
-        timestamp: new Date().toISOString(),
+        // timestamp: event.rxTime.toISOString(), // время из сообщения
+        timestamp: new Date().toISOString(), // время сервера
         [type]: JSON.stringify(event)
       }
-    )
+    ).then(() => { // тут можно включить самоудаление сообщений из базы
+      // whoami
+      // redis.expire(`device:${from}`, redisConfig.ttl)
+    })
   })
 
   startServer(redis)
 }
-
 connectToMeshtastic()
-
-// mqtt mqtt://admin:meshtastic@meshtastic.taubetele.com LongFast !25a77688 onMessagePacket String {
-//   "rxSnr": 0,
-//   "hopLimit": 6,
-//   "wantAck": false,
-//   "rxRssi": 0,
-//   "id": 176645372,
-//   "rxTime": "2024-01-13T12:35:26.000Z",
-//   "type": "broadcast",
-//   "from": 500021556, mashino gw8
-//   "to": 4294967295,
-//   "channel": 0,
-//   "data": "123123"
-// }
