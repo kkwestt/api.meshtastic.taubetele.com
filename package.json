@@ -1,19 +1,32 @@
 {
-  "name": "backend",
+  "name": "nodejs-sandbox",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "index.html",
   "scripts": {
-    "dev": "npx nodemon"
+    "dev": "nodemon index.mjs",
+    "start": "node index.mjs"
   },
-  "author": "",
-  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codesandbox-app/static-template.git"
+  },
+  "keywords": [],
+  "author": "Vadim Kudr",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/codesandbox-app/static-template/issues"
+  },
+  "homepage": "https://github.com/codesandbox-app/static-template#readme",
   "dependencies": {
+    "@meshtastic/meshtasticjs": "^2.2.4-0",
+    "@redis/json": "^1.0.6",
+    "@redis/search": "^1.1.5",
     "aes256": "^1.1.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "mqtt": "^4.3.7",
-    "protobufjs": "^7.2.4"
+    "mqtt": "4.3.7",
+    "redis": "^4.6.10"
   },
   "devDependencies": {
     "eslint": "^8.44.0",
