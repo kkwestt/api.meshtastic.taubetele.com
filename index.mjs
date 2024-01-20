@@ -6,15 +6,18 @@ import cors from 'cors'
 import { api, redisConfig, servers } from './config.mjs'
 import { listenToEvents } from './listenToEvents.mjs'
 import { getEventType } from './getEventType.mjs'
-
 import { Telegraf } from 'telegraf'
 // import { message } from 'telegraf/filters'
 
 const bot = new Telegraf(api.BOT_TOKEN)
-bot.start((ctx) => ctx.reply('Welcome'))
-// bot.help((ctx) => ctx.reply('Send me a sticker'))
-// bot.on(message('sticker'), (ctx) => ctx.reply('👍'))
-// bot.hears('hi', (ctx) => ctx.reply('Hey there'))
+
+bot.catch((err, ctx) => {
+  console.log(`Bot Catched ERROR: ${err}`)
+  bot.telegram.sendMessage(api.CHANNEL_ID, `Bot Catched ERROR: ${err}`)
+})
+
+bot.command('example', (ctx) => ctx.reply('👍'))
+bot.start((ctx) => ctx.reply('Welcome 👍'))
 bot.launch()
 
 // Enable graceful stop
@@ -81,7 +84,7 @@ async function connectToMeshtastic () {
   listenToEvents(servers, (server, channel, user, eventName, eventType, event) => {
     const type = getEventType(eventName, eventType)
 
-    console
+    // console
     if (!type) {
       return
     }
@@ -99,16 +102,65 @@ async function connectToMeshtastic () {
             return
           }
           preMessage = message
-          console.log(new Date().toLocaleTimeString(), new Date().toLocaleDateString(), JSON.parse(answer.user).data.longName, '(', event.from, '):', event.data)
-          if (server.telegram) bot.telegram.sendMessage(api.CHANNEL_ID, 'MESH ✉️ ' + JSON.parse(answer.user).data.longName + ': ' + event.data)
+
+          let longName
+          try {
+            const userData = JSON.parse(answer.user)
+            if (userData && userData.data && userData.data.longName) longName = userData.data.longName
+            console.log(new Date().toLocaleTimeString(), new Date().toLocaleDateString(), longName, '(', event.from, '):', event.data)
+            // if (server.telegram)
+            // bot.telegram.sendMessage(api.CHANNEL_ID, '✉️' + longName + ':  ' + event.data)
+
+            // Механизм ограничения частоты запросов
+            const rateLimit = (limit, interval, action) => {
+              const userLimits = new Map()
+
+              return async (ctx, next) => {
+                const userId = ctx.message.from.id
+
+                if (!userLimits.has(userId)) {
+                  userLimits.set(userId, { count: 0, timestamp: Date.now() })
+                }
+
+                const userLimit = userLimits.get(userId)
+
+                if (Date.now() - userLimit.timestamp < interval) {
+                  if (userLimit.count >= limit) {
+                    return ctx.reply(`Превышен лимит запросов. Попробуйте через ${Math.ceil((interval - (Date.now() - userLimit.timestamp)) / 1000)} секунд.`)
+                  }
+
+                  userLimit.count += 1
+                } else {
+                  userLimit.count = 1
+                  userLimit.timestamp = Date.now()
+                }
+
+                await next()
+              }
+            }
+
+            // Применяем ограничение частоты к команде /send (лимит: 1 запрос в 10 секунд)
+            bot.command('send', rateLimit(1, 10000, async (ctx) => {
+              // Замените 'TARGET_CHAT_ID' на фактический идентификатор чата, куда нужно отправить сообщение
+              const targetChatId = 'TARGET_CHAT_ID'
+
+              // Замените 'YOUR_MESSAGE' на ваше фактическое сообщение
+              const message = 'YOUR_MESSAGE'
+
+              // Отправляем сообщение
+              await ctx.telegram.sendMessage(targetChatId, message)
+
+              // Ответим пользователю, что сообщение отправлено
+              ctx.reply('Сообщение отправлено!')
+            }))
+          } catch (err) {
+            console.error('ERROR при парсинге JSON:', error)
+          }
         })
       }
     } catch (err) {
-      console.log(err)
-      return
+      console.log('ERROR onMessagePacket', err)
     }
-
-    return
 
     redis.hSet(`device:${from}`,
       {
