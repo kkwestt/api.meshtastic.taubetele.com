@@ -5,6 +5,7 @@ import compression from 'compression'
 import cors from 'cors'
 import { isEqual, get } from 'lodash-es'
 
+// test
 import { api, redisConfig, servers, valuesPaths } from './config.mjs'
 import { listenToEvents } from './listenToEvents.mjs'
 import { getEventType } from './getEventType.mjs'
