@@ -3,12 +3,14 @@ import express from 'express'
 import compression from 'compression'
 
 import cors from 'cors'
-import { isEqual, get } from 'lodash-es'
+import { isEqual, get, reduce } from 'lodash-es'
 
 import { api, redisConfig, servers, valuesPaths } from './config.mjs'
 import { listenToEvents } from './listenToEvents.mjs'
 import { getEventType } from './getEventType.mjs'
 import { Telegraf } from 'telegraf'
+
+const MAX_METADATA_ITEMS_COUNT = 199
 
 const bot = new Telegraf(api.BOT_TOKEN)
 if (api.enable) {
@@ -26,7 +28,7 @@ if (api.enable) {
 
 const connectToRedis = async () => {
   const client = await createClient(redisConfig)
-    .on('error', err => console.log('Redis Client Error', err))
+    .on('error', (err) => console.log('Redis Client Error', err))
     .connect()
   return client
 }
@@ -36,22 +38,33 @@ function startServer (redis) {
 
   app.use(compression())
 
-  app.use(cors({
-    origin: (origin, callback) => {
-      callback(null, origin || '*')
-    },
-    // credentials: true,
-    allowedHeaders: ['Content-Type']
-  }))
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        callback(null, origin || '*')
+      },
+      // credentials: true,
+      allowedHeaders: ['Content-Type']
+    })
+  )
 
   app.use(cors())
 
   let cachedKeys = null
   let cachedValues = null
 
+  const queryMetadata = async (from, type) => {
+    const data = (await redis.lRange(`${type}:${from}`, 0, MAX_METADATA_ITEMS_COUNT)).map((item) =>
+      JSON.parse(item)
+    )
+    return data
+  }
+
   const queryData = async () => {
     cachedKeys = await redis.keys('device:*')
-    cachedValues = await Promise.all(cachedKeys.map(key => redis.hGetAll(key)))
+    cachedValues = await Promise.all(
+      cachedKeys.map((key) => redis.hGetAll(key))
+    )
   }
 
   setInterval(queryData, 10000)
@@ -87,7 +100,7 @@ function startServer (redis) {
           const data = JSON.parse(value)
           deviceResult[key] = {}
 
-          Object.keys(valuesKeys).forEach(valueKey => {
+          Object.keys(valuesKeys).forEach((valueKey) => {
             let value = get(data, valuesKeys[valueKey])
             if (typeof value === 'number') {
               value = Number(value.toFixed(3))
@@ -106,6 +119,32 @@ function startServer (redis) {
 
     console.log('responce', performance.now() - start)
     res.json(result)
+  })
+
+  app.get('/stream', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Connection', 'keep-alive')
+    res.flushHeaders() // flush the headers to establish SSE with client
+
+    let counter = 0
+    const interValID = setInterval(() => {
+      counter++
+      if (counter >= 10) {
+        clearInterval(interValID)
+        res.end() // terminates SSE session
+        return
+      }
+      res.write(`data: ${JSON.stringify({ num: counter })}\n\n`) // res.write() instead of res.send()
+    }, 1000)
+
+    // If client closes connection, stop sending events
+    res.on('close', () => {
+      console.log('client dropped me')
+      clearInterval(interValID)
+      res.end()
+    })
   })
 
   app.get('/', async (req, res) => {
@@ -136,22 +175,19 @@ function startServer (redis) {
 
   app.get('/gps:from', async (req, res) => {
     const from = req.params.from.substring(1)
-    const data = (await redis.lRange(`gps:${from}`, 0, 199)).map(item => JSON.parse(item))
-    // console.log('gps', { from })
+    const data = queryMetadata(from, 'gps')
     res.json({ from, data })
   })
 
   app.get('/deviceMetrics:from', async (req, res) => {
     const from = req.params.from.substring(1)
-    const data = (await redis.lRange(`deviceMetrics:${from}`, 0, 199)).map(item => JSON.parse(item))
-    // console.log('gps', { from })
+    const data = queryMetadata(from, 'deviceMetrics')
     res.json({ from, data })
   })
 
   app.get('/environmentMetrics:from', async (req, res) => {
     const from = req.params.from.substring(1)
-    const data = (await redis.lRange(`environmentMetrics:${from}`, 0, 199)).map(item => JSON.parse(item))
-    // console.log('gps', { from })
+    const data = queryMetadata(from, 'environmentMetrics')
     res.json({ from, data })
   })
 
@@ -164,84 +200,115 @@ async function connectToMeshtastic () {
   const redis = await connectToRedis()
 
   function upsertItem (key, serverTime, newItem) {
-    redis
-      .lRange(key, -1, -1)
-      .then(([lastItemStr]) => {
-        const isNewItem = !lastItemStr
+    redis.lRange(key, -1, -1).then((res) => {
+      const [lastItemStr] = res
+      const isNewItem = !lastItemStr
+      let isUpdated = false
 
-        if (lastItemStr) {
-          const { time, ...lastPosItem } = JSON.parse(lastItemStr)
-          lastItemStr = !isEqual(lastPosItem, newItem)
-        }
+      if (!isNewItem) {
+        const { time, ...lastPosItem } = JSON.parse(lastItemStr)
 
-        if (isNewItem) {
-          redis
-            .rPush(key, JSON.stringify({
+        const a = newItem
+        const b = lastPosItem
+
+        const diff = reduce(
+          a,
+          (result, aValue, key) => {
+            const bValue = b[key]
+            if (typeof value === 'number' && typeof bValue === 'number') {
+              return aValue.toFixed(5) === bValue.toFixed(5)
+                ? result
+                : result.concat(key)
+            }
+            return isEqual(aValue, b[key]) ? result : result.concat(key)
+          },
+          []
+        )
+
+        isUpdated = diff.length > 0 //! isEqual(lastPosItem, newItem)
+
+        // if (isUpdated) {
+        //   console.log('updated', key, newItem, lastPosItem, diff)
+        // }
+      }
+
+      if (isNewItem || isUpdated) {
+        redis
+          .rPush(
+            key,
+            JSON.stringify({
               time: serverTime,
               ...newItem
-            }))
-            .then((res) => {
-              return redis.lTrim(key, 0, 199) // no more 200 row
             })
-        } else {
-          redis
-            .lSet(key, -1, JSON.stringify({
-              time: serverTime,
-              ...newItem
-            }))
-        }
-      })
+          )
+          .then((res) => {
+            return redis.lTrim(key, 0, MAX_METADATA_ITEMS_COUNT)
+          })
+      } /* else {
+        redis.lSet(
+          key,
+          -1,
+          JSON.stringify({
+            time: serverTime,
+            ...newItem
+          })
+        )
+      } */
+    })
   }
 
-  listenToEvents(servers, (server, channel, user, eventName, eventType, event) => {
-    const type = getEventType(eventName, eventType, event)
-    if (!type) return
+  listenToEvents(
+    servers,
+    (server, channel, user, eventName, eventType, event) => {
+      const type = getEventType(eventName, eventType, event)
+      if (!type) return
 
-    // console.log('!!!###', type, eventName, eventType, event)
+      // console.log('!!!###', type, eventName, eventType, event)
 
-    const { from } = event
+      const { from } = event
 
-    const key = `device:${from}`
-    const serverTime = Date.now()
+      const key = `device:${from}`
+      const serverTime = Date.now()
 
-    try {
-      if (type === 'message' || eventName === 'onMessagePacket') {
-        if (event.type === 'direct') {
-          // console.log('MESSAGE DIRECT: ', new Date().toLocaleTimeString(), new Date().toLocaleDateString(), '(', event.from, '):', event.data)
-          return
-        }
-
-        redis.hGetAll(key).then(answer => {
-          message = event.data + event.from
-          if (message === preMessage) {
+      try {
+        if (type === 'message' || eventName === 'onMessagePacket') {
+          if (event.type === 'direct') {
+            // console.log('MESSAGE DIRECT: ', new Date().toLocaleTimeString(), new Date().toLocaleDateString(), '(', event.from, '):', event.data)
             return
           }
-          preMessage = message
 
-          let longName
-
-          if (answer?.user) {
-            try {
-              const userData = JSON.parse(answer.user)
-              if (userData && userData.data && userData.data.longName) {
-                longName = userData.data.longName
-                // console.log('MESSAGE PUBLICK: ', new Date().toLocaleTimeString(), new Date().toLocaleDateString(), longName, '(', event.from, '):', event.data)
-              }
-              if (server.telegram && api.enable) {
-                bot.telegram.sendMessage(api.CHANNEL_ID, '✉️' + longName + ':  ' + event.data)
-                // console.log('✉️' + longName + ':  ' + event.data)
-              }
-            } catch (err) {
+          redis.hGetAll(key).then((answer) => {
+            message = event.data + event.from
+            if (message === preMessage) {
+              return
             }
-          }
-        })
-      }
-    } catch (err) {
-      // console.log('ERROR onMessagePacket', err)
-    }
+            preMessage = message
 
-    redis
-      .hSet(key, {
+            let longName
+
+            if (answer?.user) {
+              try {
+                const userData = JSON.parse(answer.user)
+                if (userData && userData.data && userData.data.longName) {
+                  longName = userData.data.longName
+                  // console.log('MESSAGE PUBLICK: ', new Date().toLocaleTimeString(), new Date().toLocaleDateString(), longName, '(', event.from, '):', event.data)
+                }
+                if (server.telegram && api.enable) {
+                  bot.telegram.sendMessage(
+                    api.CHANNEL_ID,
+                    '✉️' + longName + ':  ' + event.data
+                  )
+                  // console.log('✉️' + longName + ':  ' + event.data)
+                }
+              } catch (err) {}
+            }
+          })
+        }
+      } catch (err) {
+        // console.log('ERROR onMessagePacket', err)
+      }
+
+      redis.hSet(key, {
         server: server.name,
         timestamp: new Date(serverTime).toISOString(), // время сервера
         [type]: JSON.stringify(event)
@@ -250,27 +317,24 @@ async function connectToMeshtastic () {
       // redis.expire(key, redisConfig.ttl)  // тут можно включить самоудаление сообщений из базы
       // })
 
-    if (type === 'position') {
-      const gpsKey = `gps:${from}`
+      if (type === 'position') {
+        const gpsKey = `gps:${from}`
 
-      const {
-        latitudeI,
-        longitudeI,
-        altitude,
-        seqNumber
-      } = event?.data || {}
+        const { latitudeI, longitudeI, altitude, seqNumber } =
+					event?.data || {}
 
-      const newPosItem = { latitudeI, longitudeI, altitude, seqNumber }
+        const newPosItem = { latitudeI, longitudeI, altitude, seqNumber }
 
-      upsertItem(gpsKey, serverTime, newPosItem)
-    } else if (type === 'deviceMetrics') {
-      const telemetryKey = `deviceMetrics:${from}`
-      upsertItem(telemetryKey, serverTime, event.data.variant.value)
-    } else if (type === 'environmentMetrics') {
-      const telemetryKey = `environmentMetrics:${from}`
-      upsertItem(telemetryKey, serverTime, event.data.variant.value)
+        upsertItem(gpsKey, serverTime, newPosItem)
+      } else if (type === 'deviceMetrics') {
+        const telemetryKey = `deviceMetrics:${from}`
+        upsertItem(telemetryKey, serverTime, event.data.variant.value)
+      } else if (type === 'environmentMetrics') {
+        const telemetryKey = `environmentMetrics:${from}`
+        upsertItem(telemetryKey, serverTime, event.data.variant.value)
+      }
     }
-  })
+  )
 
   startServer(redis)
 }
