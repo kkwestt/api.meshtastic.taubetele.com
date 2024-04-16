@@ -10,11 +10,10 @@ import { listenToEvents } from './listenToEvents.mjs'
 import { getEventType } from './getEventType.mjs'
 import { Telegraf } from 'telegraf'
 
+const bot = new Telegraf(api.BOT_TOKEN)
 if (api.enable) {
-  const bot = new Telegraf(api.BOT_TOKEN)
   bot.catch((err, ctx) => {
     console.log(`Bot Catched ERROR: ${err}`)
-    bot.telegram.sendMessage(api.CHANNEL_ID, `Bot Catched ERROR: ${err}`)
   })
 
   bot.command('example', (ctx) => ctx.reply(''))
@@ -86,7 +85,6 @@ function startServer (redis) {
         const valuesKeys = valuesPaths[key]
         if (valuesKeys) {
           const data = JSON.parse(value)
-
           deviceResult[key] = {}
 
           Object.keys(valuesKeys).forEach(valueKey => {
@@ -234,7 +232,6 @@ async function connectToMeshtastic () {
                 // console.log('✉️' + longName + ':  ' + event.data)
               }
             } catch (err) {
-              // console.error('ERROR при парсинге JSON:', err, answer)
             }
           }
         })
@@ -249,9 +246,9 @@ async function connectToMeshtastic () {
         timestamp: new Date(serverTime).toISOString(), // время сервера
         [type]: JSON.stringify(event)
       })
-      .then(() => {
+      // .then(() => {
       // redis.expire(key, redisConfig.ttl)  // тут можно включить самоудаление сообщений из базы
-      })
+      // })
 
     if (type === 'position') {
       const gpsKey = `gps:${from}`
