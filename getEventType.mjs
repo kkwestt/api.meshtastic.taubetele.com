@@ -12,7 +12,11 @@ export function getEventType (eventName, eventType, event) {
     return
   }
 
-  if (event.from < 1000) { // фильтр от бракованных нод таких как 4, 554 и т д. Поле from долно быть длинным 6-9 знаков.
+  // console.log(eventName, event)
+
+  if (event.from === 4184512284) return // baned guy
+
+  if (event.from <= 200300) { // фильтр от бракованных нод таких как 4, 554 и т д. Поле from долно быть длинным 6-9 знаков.
     console.log('ERROR Message from brocken ID:', event.from, event)
     return
   }
@@ -44,5 +48,8 @@ export function getEventType (eventName, eventType, event) {
     type = 'message'
   }
 
+  // if (eventName === 'deviceMetadata') {
+  //   type = 'deviceMetadata'
+  // }
   return type
 }

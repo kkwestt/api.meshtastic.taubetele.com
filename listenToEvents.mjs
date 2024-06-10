@@ -33,16 +33,16 @@ const connectToProtobufServer = (server, callback) => {
 
 const handleProtobufServiceEnvelopePacket = (channel, user, device, arrayBuffer) => {
   try {
-	  const serviceEnvelope = Protobuf.Mqtt.ServiceEnvelope.fromBinary(arrayBuffer)
-	  const meshPacket = serviceEnvelope.packet
+    const serviceEnvelope = Protobuf.Mqtt.ServiceEnvelope.fromBinary(arrayBuffer)
+    const meshPacket = serviceEnvelope.packet
     // console.log(serviceEnvelope.packet)
-	  const { rxSnr, hopLimit, wantAck, rxRssi } = meshPacket
+    const { rxSnr, hopLimit, wantAck, rxRssi } = meshPacket
 
     if (meshPacket.payloadVariant.case === 'decoded') {
       // добавил в iMeshDevice:handleDecodedPacket параметр additionalInfo
       // если библиотеку обновить, то ничего страшного не случится
       // для raw mqtt пакетов не будут доступны mqttChannel и mqttUser
-      device.handleDecodedPacket(meshPacket.payloadVariant.value, meshPacket, { mqttChannel: channel, mqttUser: user, rxSnr, hopLimit, wantAck, rxRssi })
+      device.handleDecodedPacket(meshPacket.payloadVariant.value, meshPacket, { mqttChannel: channel, mqttUser: user, rxSnr, hopLimit, wantAck, rxRssi }) // hopStart viaMqtt priority
     } else {
       // console.warn('!!! not decoded', JSON.stringify(serviceEnvelope, null, 2))
     }

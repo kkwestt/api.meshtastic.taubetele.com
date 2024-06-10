@@ -10,21 +10,20 @@ import { listenToEvents } from './listenToEvents.mjs'
 import { getEventType } from './getEventType.mjs'
 import { Telegraf } from 'telegraf'
 
-const MAX_METADATA_ITEMS_COUNT = 199
+const MAX_METADATA_ITEMS_COUNT = 999
 
 const bot = new Telegraf(api.BOT_TOKEN)
-if (api.enable) {
-  bot.catch((err, ctx) => {
-    console.log(`Bot Catched ERROR: ${err}`)
-  })
 
-  bot.command('example', (ctx) => ctx.reply(''))
-  bot.start((ctx) => ctx.reply('Welcome '))
-  bot.launch()
+bot.catch((err, ctx) => {
+  console.log(`Bot Catched ERROR: ${err}`)
+})
 
-  process.once('SIGINT', () => bot.stop('SIGINT'))
-  process.once('SIGTERM', () => bot.stop('SIGTERM'))
-}
+bot.command('example', (ctx) => ctx.reply(''))
+bot.start((ctx) => ctx.reply('Welcome '))
+bot.launch()
+
+process.once('SIGINT', () => bot.stop('SIGINT'))
+process.once('SIGTERM', () => bot.stop('SIGTERM'))
 
 const connectToRedis = async () => {
   const client = await createClient(redisConfig)
@@ -54,9 +53,9 @@ function startServer (redis) {
   let cachedValues = null
 
   const queryMetadata = async (from, type) => {
-    const data = (await redis.lRange(`${type}:${from}`, 0, MAX_METADATA_ITEMS_COUNT)).map((item) =>
-      JSON.parse(item)
-    )
+    const data = (
+      await redis.lRange(`${type}:${from}`, 0, MAX_METADATA_ITEMS_COUNT)
+    ).map((item) => JSON.parse(item))
     return data
   }
 
@@ -147,7 +146,25 @@ function startServer (redis) {
     })
   })
 
-  app.get('/', async (req, res) => {
+  app.get('/gps:from', async (req, res) => {
+    const from = req.params.from.substring(1)
+    const data = await queryMetadata(from, 'gps')
+    res.json({ from, data })
+  })
+
+  app.get('/deviceMetrics:from', async (req, res) => {
+    const from = req.params.from.substring(1)
+    const data = await queryMetadata(from, 'deviceMetrics')
+    res.json({ from, data })
+  })
+
+  app.get('/environmentMetrics:from', async (req, res) => {
+    const from = req.params.from.substring(1)
+    const data = await queryMetadata(from, 'environmentMetrics')
+    res.json({ from, data })
+  })
+
+  app.get('/api', async (req, res) => {
     if (!cachedValues) {
       await queryData()
     }
@@ -173,22 +190,30 @@ function startServer (redis) {
     res.json(result)
   })
 
-  app.get('/gps:from', async (req, res) => {
-    const from = req.params.from.substring(1)
-    const data = queryMetadata(from, 'gps')
-    res.json({ from, data })
-  })
+  app.get('/', async (req, res) => {
+    if (!cachedValues) {
+      await queryData()
+    }
 
-  app.get('/deviceMetrics:from', async (req, res) => {
-    const from = req.params.from.substring(1)
-    const data = queryMetadata(from, 'deviceMetrics')
-    res.json({ from, data })
-  })
+    const result = cachedKeys.reduce((result, key, index) => {
+      const { server, timestamp, ...rest } = cachedValues[index]
 
-  app.get('/environmentMetrics:from', async (req, res) => {
-    const from = req.params.from.substring(1)
-    const data = queryMetadata(from, 'environmentMetrics')
-    res.json({ from, data })
+      const data = {
+        server,
+        timestamp
+      }
+
+      Object.entries(rest).forEach(([key, value]) => {
+        data[key] = JSON.parse(value)
+      })
+
+      const from = key.substr(7) // device:3663493320, drop "device:"
+      result[from] = data
+
+      return result
+    }, {})
+
+    res.json(result)
   })
 
   app.listen(80)
@@ -224,7 +249,6 @@ async function connectToMeshtastic () {
           },
           []
         )
-
         isUpdated = diff.length > 0 //! isEqual(lastPosItem, newItem)
 
         // if (isUpdated) {
@@ -310,28 +334,52 @@ async function connectToMeshtastic () {
 
       redis.hSet(key, {
         server: server.name,
-        timestamp: new Date(serverTime).toISOString(), // время сервера
-        [type]: JSON.stringify(event)
+        timestamp: new Date(serverTime).toISOString(),
+        [type]: JSON.stringify({
+          serverTime, // тут поменять rxTime  на время сервера
+          ...event
+        })
       })
       // .then(() => {
       // redis.expire(key, redisConfig.ttl)  // тут можно включить самоудаление сообщений из базы
       // })
 
+      function round (num, decimalPlaces = 0) {
+        num = Math.round(num + 'e' + decimalPlaces)
+        return Number(num + 'e' + -decimalPlaces)
+      }
+
       if (type === 'position') {
         const gpsKey = `gps:${from}`
-
-        const { latitudeI, longitudeI, altitude, seqNumber } =
-					event?.data || {}
-
+        const { latitudeI, longitudeI, altitude, seqNumber } = event?.data || { }
         const newPosItem = { latitudeI, longitudeI, altitude, seqNumber }
-
         upsertItem(gpsKey, serverTime, newPosItem)
       } else if (type === 'deviceMetrics') {
         const telemetryKey = `deviceMetrics:${from}`
-        upsertItem(telemetryKey, serverTime, event.data.variant.value)
+        let { batteryLevel, voltage, channelUtilization, airUtilTx } = event?.data?.variant?.value || { }
+        batteryLevel > 100 ? batteryLevel = 100 : round(batteryLevel, 0)
+        voltage = round(voltage, 2)
+        channelUtilization = round(channelUtilization, 1)
+        airUtilTx = round(airUtilTx, 1)
+        const newPosItem = { batteryLevel, voltage, channelUtilization, airUtilTx }
+        upsertItem(telemetryKey, serverTime, newPosItem)
       } else if (type === 'environmentMetrics') {
         const telemetryKey = `environmentMetrics:${from}`
-        upsertItem(telemetryKey, serverTime, event.data.variant.value)
+        let { temperature, relativeHumidity, barometricPressure, gasResistance, voltage, current } = event?.data?.variant?.value || { }
+        temperature = round(temperature, 1)
+        relativeHumidity = round(relativeHumidity, 0)
+        barometricPressure = round(barometricPressure, 0)
+        gasResistance = round(gasResistance, 0)
+        voltage = round(voltage, 2)
+        current = round(current, 2)
+        const newPosItem = { temperature, relativeHumidity, barometricPressure, gasResistance, voltage, current }
+        upsertItem(telemetryKey, serverTime, newPosItem)
+      } else if (type === 'message') {
+        const telemetryKey = `message:${from}`
+        upsertItem(telemetryKey, serverTime, event)
+      } else if (type === 'deviceMetadata') {
+        const telemetryKey = `message:${from}`
+        upsertItem(telemetryKey, serverTime, event)
       }
     }
   )
