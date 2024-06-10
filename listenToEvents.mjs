@@ -43,6 +43,7 @@ const handleProtobufServiceEnvelopePacket = (channel, user, device, arrayBuffer)
       // если библиотеку обновить, то ничего страшного не случится
       // для raw mqtt пакетов не будут доступны mqttChannel и mqttUser
       device.handleDecodedPacket(meshPacket.payloadVariant.value, meshPacket, { mqttChannel: channel, mqttUser: user, rxSnr, hopLimit, wantAck, rxRssi }) // hopStart viaMqtt priority
+      // console.warn(rxSnr)
     } else {
       // console.warn('!!! not decoded', JSON.stringify(serviceEnvelope, null, 2))
     }

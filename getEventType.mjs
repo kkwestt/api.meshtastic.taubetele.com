@@ -14,10 +14,10 @@ export function getEventType (eventName, eventType, event) {
 
   // console.log(eventName, event)
 
-  if (event.from === 4184512284) return // baned guy
+  if (event.from === 4184512284 || event.from === 7 || event.from === 4) return // baned guy's
 
-  if (event.from <= 200300) { // фильтр от бракованных нод таких как 4, 554 и т д. Поле from долно быть длинным 6-9 знаков.
-    console.log('ERROR Message from brocken ID:', event.from, event)
+  if (event.from <= 100000) { // фильтр от бракованных нод таких как 4, 554 и т д. Поле from долно быть длинным 6-9 знаков.
+    // console.log('ERROR Message from brocken ID:', event.from, event)
     return
   }
 

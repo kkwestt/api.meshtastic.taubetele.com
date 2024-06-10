@@ -12,18 +12,18 @@ import { Telegraf } from 'telegraf'
 
 const MAX_METADATA_ITEMS_COUNT = 999
 
-const bot = new Telegraf(api.BOT_TOKEN)
+// const bot = new Telegraf(api.BOT_TOKEN)
 
-bot.catch((err, ctx) => {
-  console.log(`Bot Catched ERROR: ${err}`)
-})
+// bot.catch((err, ctx) => {
+//   console.log(`Bot Catched ERROR: ${err}`)
+// })
 
-bot.command('example', (ctx) => ctx.reply(''))
-bot.start((ctx) => ctx.reply('Welcome '))
-bot.launch()
+// bot.command('example', (ctx) => ctx.reply(''))
+// bot.start((ctx) => ctx.reply('Welcome '))
+// bot.launch()
 
-process.once('SIGINT', () => bot.stop('SIGINT'))
-process.once('SIGTERM', () => bot.stop('SIGTERM'))
+// process.once('SIGINT', () => bot.stop('SIGINT'))
+// process.once('SIGTERM', () => bot.stop('SIGTERM'))
 
 const connectToRedis = async () => {
   const client = await createClient(redisConfig)
@@ -183,6 +183,8 @@ function startServer (redis) {
 
       const from = key.substr(7) // device:3663493320, drop "device:"
       result[from] = data
+
+      // if (Date.now() - new Date(timestamp).valueOf() >= 86400) return /// тут я хз как
 
       return result
     }, {})
@@ -352,6 +354,7 @@ async function connectToMeshtastic () {
       if (type === 'position') {
         const gpsKey = `gps:${from}`
         const { latitudeI, longitudeI, altitude, seqNumber } = event?.data || { }
+        if (latitudeI === 0 || longitudeI === 0) return
         const newPosItem = { latitudeI, longitudeI, altitude, seqNumber }
         upsertItem(gpsKey, serverTime, newPosItem)
       } else if (type === 'deviceMetrics') {
