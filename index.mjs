@@ -3,27 +3,21 @@ import express from 'express'
 import compression from 'compression'
 
 import cors from 'cors'
-import { isEqual, get, reduce } from 'lodash-es'
+import { isEqual, reduce } from 'lodash-es'
 
-import { api, redisConfig, servers, valuesPaths } from './config.mjs'
+import { redisConfig, servers } from './config.mjs'
 import { listenToEvents } from './listenToEvents.mjs'
 import { getEventType } from './getEventType.mjs'
-import { Telegraf } from 'telegraf'
+// import { Telegraf } from 'telegraf'
+
+import { sendTelegramMessage } from './telegram.mjs'
+
+// import TimeAgo from 'javascript-time-ago'
+// import en from 'javascript-time-ago/locale/en'
+// TimeAgo.addDefaultLocale(en) // Create formatter (English).
+// const timeAgo = new TimeAgo('en-US')
 
 const MAX_METADATA_ITEMS_COUNT = 999
-
-// const bot = new Telegraf(api.BOT_TOKEN)
-
-// bot.catch((err, ctx) => {
-//   console.log(`Bot Catched ERROR: ${err}`)
-// })
-
-// bot.command('example', (ctx) => ctx.reply(''))
-// bot.start((ctx) => ctx.reply('Welcome '))
-// bot.launch()
-
-// process.once('SIGINT', () => bot.stop('SIGINT'))
-// process.once('SIGTERM', () => bot.stop('SIGTERM'))
 
 const connectToRedis = async () => {
   const client = await createClient(redisConfig)
@@ -60,91 +54,94 @@ function startServer (redis) {
   }
 
   const queryData = async () => {
-    cachedKeys = await redis.keys('device:*')
+    const cachedKeysNew = await redis.keys('device:*')
+
     cachedValues = await Promise.all(
-      cachedKeys.map((key) => redis.hGetAll(key))
+      cachedKeysNew.map((key) => redis.hGetAll(key))
     )
+
+    cachedKeys = cachedKeysNew
   }
 
-  setInterval(queryData, 10000)
+  setInterval(queryData, 5000)
 
-  app.get('/simple', async (req, res) => {
-    let start = performance.now()
+  // app.get('/simple', async (req, res) => {
+  //   let start = performance.now()
 
-    if (!cachedValues) {
-      await queryData()
-    }
+  //   if (!cachedValues) {
+  //     await queryData()
+  //   }
 
-    console.log('query', performance.now() - start)
-    start = performance.now()
+  //   console.log('query', performance.now() - start)
+  //   start = performance.now()
 
-    console.log('values', performance.now() - start)
-    start = performance.now()
+  //   console.log('values', performance.now() - start)
+  //   start = performance.now()
 
-    const result = cachedKeys.reduce((result, key, index) => {
-      const { server, timestamp, ...rest } = cachedValues[index]
+  //   const result = cachedKeys.reduce((result, key, index) => {
+  //     const { server, timestamp, ...rest } = cachedValues[index]
 
-      const deviceResult = {
-        server,
-        timestamp: new Date(timestamp).getTime()
-      }
+  //     const deviceResult = {
+  //       server,
+  //       timestamp: new Date(timestamp).getTime()
+  //     }
 
-      if (rest.message) {
-        deviceResult.message = JSON.parse(rest.message).data
-      }
+  //     if (rest.message) {
+  //       deviceResult.message = JSON.parse(rest.message).data
+  //     }
 
-      Object.entries(rest).forEach(([key, value]) => {
-        const valuesKeys = valuesPaths[key]
-        if (valuesKeys) {
-          const data = JSON.parse(value)
-          deviceResult[key] = {}
+  //     Object.entries(rest).forEach(([key, value]) => {
+  //       const valuesKeys = valuesPaths[key]
+  //       if (valuesKeys) {
+  //         const data = JSON.parse(value)
+  //         deviceResult[key] = {}
 
-          Object.keys(valuesKeys).forEach((valueKey) => {
-            let value = get(data, valuesKeys[valueKey])
-            if (typeof value === 'number') {
-              value = Number(value.toFixed(3))
-            }
+  //         Object.keys(valuesKeys).forEach((valueKey) => {
+  //           let value = get(data, valuesKeys[valueKey])
+  //           if (typeof value === 'number') {
+  //             value = Number(value.toFixed(3))
+  //           }
 
-            deviceResult[key][valueKey] = value
-          })
-        }
-      })
+  //           deviceResult[key][valueKey] = value
+  //         })
+  //       }
+  //     })
 
-      const from = key.substr(7) // device:3663493320, drop "device:"
-      result[from] = deviceResult
+  //     const from = key.substr(7) // device:3663493320, drop "device:"
+  //     result[from] = deviceResult
 
-      return result
-    }, {})
+  //     return result
+  //   }, {})
 
-    console.log('responce', performance.now() - start)
-    res.json(result)
-  })
+  //   console.log('responce', performance.now() - start)
+  //   res.json(result)
+  // })
 
-  app.get('/stream', (req, res) => {
-    res.setHeader('Cache-Control', 'no-cache')
-    res.setHeader('Content-Type', 'text/event-stream')
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Connection', 'keep-alive')
-    res.flushHeaders() // flush the headers to establish SSE with client
+  // app.get('/stream', (req, res) => {
+  //   res.setHeader('Cache-Control', 'no-cache')
+  //   res.setHeader('Content-Type', 'text/event-stream')
+  //   res.setHeader('Access-Control-Allow-Origin', '*')
+  //   res.setHeader('Connection', 'keep-alive')
+  //   res.flushHeaders() // flush the headers to establish SSE with client
 
-    let counter = 0
-    const interValID = setInterval(() => {
-      counter++
-      if (counter >= 10) {
-        clearInterval(interValID)
-        res.end() // terminates SSE session
-        return
-      }
-      res.write(`data: ${JSON.stringify({ num: counter })}\n\n`) // res.write() instead of res.send()
-    }, 1000)
+  //   let counter = 0
+  //   const interValID = setInterval(() => {
+  //     counter++
+  //     if (counter >= 10) {
+  //       clearInterval(interValID)
+  //       res.end() // terminates SSE session
+  //       return
+  //     }
+  //     res.write(`data: ${JSON.stringify({ num: counter })}\n\n`) // res.write() instead of res.send()
+  //   }, 1000)
 
-    // If client closes connection, stop sending events
-    res.on('close', () => {
-      console.log('client dropped me')
-      clearInterval(interValID)
-      res.end()
-    })
-  })
+  //   // If client closes connection, stop sending events
+  //   res.on('close', () => {
+  //     console.log('client dropped me')
+  //     clearInterval(interValID)
+  //     res.end()
+  //   })
+  // })
 
   app.get('/gps:from', async (req, res) => {
     const from = req.params.from.substring(1)
@@ -168,26 +165,29 @@ function startServer (redis) {
     if (!cachedValues) {
       await queryData()
     }
+    const result = cachedKeys
+      .reduce((result, key, index) => {
+        if (!cachedValues[index]) {
+          console.error('/api: empty key value', key)
+          return result
+        }
+        const { server, timestamp, ...rest } = cachedValues[index]
+        const isExpired = Date.now() - new Date(timestamp).getTime() >= 60 * 60 * 24 * 1000
+        if (isExpired) {
+          return result
+        }
+        const data = {
+          server,
+          timestamp
+        }
+        Object.entries(rest).forEach(([key, value]) => {
+          data[key] = JSON.parse(value)
+        })
+        const from = key.substr(7) // device:3663493320, drop "device:"
+        result[from] = data
 
-    const result = cachedKeys.reduce((result, key, index) => {
-      const { server, timestamp, ...rest } = cachedValues[index]
-
-      const data = {
-        server,
-        timestamp
-      }
-
-      Object.entries(rest).forEach(([key, value]) => {
-        data[key] = JSON.parse(value)
-      })
-
-      const from = key.substr(7) // device:3663493320, drop "device:"
-      result[from] = data
-
-      // if (Date.now() - new Date(timestamp).valueOf() >= 86400) return /// тут я хз как
-
-      return result
-    }, {})
+        return result
+      }, {})
 
     res.json(result)
   })
@@ -267,8 +267,13 @@ async function connectToMeshtastic () {
               ...newItem
             })
           )
-          .then((res) => {
-            return redis.lTrim(key, 0, MAX_METADATA_ITEMS_COUNT)
+          .then((length) => {
+            if (length <= MAX_METADATA_ITEMS_COUNT) {
+              return
+            }
+            const diff = length - MAX_METADATA_ITEMS_COUNT
+            // console.log('!!! len', length, diff, key)
+            return redis.lTrim(key, diff, length)
           })
       } /* else {
         redis.lSet(
@@ -303,6 +308,8 @@ async function connectToMeshtastic () {
             return
           }
 
+          console.log('message', event)
+
           redis.hGetAll(key).then((answer) => {
             message = event.data + event.from
             if (message === preMessage) {
@@ -310,29 +317,40 @@ async function connectToMeshtastic () {
             }
             preMessage = message
 
-            let longName
+            /*
+              event
+                from
+                device:from
+                  device:from:user:data:id === gatewayId
+                  device:from:user:data:longName
+                gatewayId
+                user:gatewayId
+                  user:gatewayId:from
+                  user:gatewayId:longName
+            */
 
-            if (answer?.user) {
+            const sendMessage = (recivedByLongName, recivedByGatewayId) => {
+              let userData
               try {
-                const userData = JSON.parse(answer.user)
-                if (userData && userData.data && userData.data.longName) {
-                  longName = userData.data.longName
-                  // console.log('MESSAGE PUBLICK: ', new Date().toLocaleTimeString(), new Date().toLocaleDateString(), longName, '(', event.from, '):', event.data)
-                }
-                if (server.telegram && api.enable) {
-                  bot.telegram.sendMessage(
-                    api.CHANNEL_ID,
-                    '✉️' + longName + ':  ' + event.data
-                  )
-                  // console.log('✉️' + longName + ':  ' + event.data)
-                }
-              } catch (err) {}
+                userData = JSON.parse(answer?.user)?.data
+              } catch {}
+
+              const fromLongName = userData?.longName || ''
+              const fromId = userData?.id || from || ''
+
+              if (server.telegram) {
+                sendTelegramMessage(`✉️ RX: ${recivedByLongName || ''} (${recivedByGatewayId || ''}) \n✉️ From: "${fromLongName}" (${fromId}) \n✉️ Msg: "${event.data}"`)
+              }
             }
+
+            redis.hGetAll(`user:${event.gatewayId}`).then((userData) => {
+              sendMessage(userData?.longName, event.gatewayId)
+            }).catch(() => {
+              sendMessage('')
+            })
           })
         }
-      } catch (err) {
-        // console.log('ERROR onMessagePacket', err)
-      }
+      } catch (err) {}
 
       redis.hSet(key, {
         server: server.name,
@@ -342,6 +360,17 @@ async function connectToMeshtastic () {
           ...event
         })
       })
+
+      if (type === 'user') {
+        const { shortName, longName } = event?.data || {}
+
+        redis.hSet(`user:${event.data.id}`, {
+          from,
+          shortName,
+          longName
+        })
+      }
+
       // .then(() => {
       // redis.expire(key, redisConfig.ttl)  // тут можно включить самоудаление сообщений из базы
       // })
@@ -382,6 +411,15 @@ async function connectToMeshtastic () {
         upsertItem(telemetryKey, serverTime, event)
       } else if (type === 'deviceMetadata') {
         const telemetryKey = `message:${from}`
+
+        // для тестов/отладки
+        // redis.rPush(`log:${telemetryKey}`,
+        //   JSON.stringify({
+        //     serverTime,
+        //     event
+        //   })
+        // )
+
         upsertItem(telemetryKey, serverTime, event)
       }
     }
@@ -391,3 +429,61 @@ async function connectToMeshtastic () {
 }
 
 connectToMeshtastic()
+
+// /// /////////////////////////// telegram
+
+// const bot = new Telegraf(api.BOT_TOKEN)
+
+// bot.catch((err, ctx) => {
+//   console.log(`Bot Catched ERROR: ${err}`)
+// })
+
+// bot.command('inline', (ctx) => {
+//   ctx.reply('Hi there!', {
+//     reply_markup: {
+//       inline_keyboard: [
+//         /* Inline buttons. 2 side-by-side */
+//         [{ text: 'Button 1', callback_data: 'btn-1' }, { text: 'Button 2', callback_data: 'btn-2' }],
+
+//         /* One button */
+//         [{ text: 'Next', callback_data: 'next' }],
+
+//         /* Also, we can have URL buttons. */
+//         [{ text: 'Open in browser', url: 'telegraf.js.org' }]
+//       ]
+//     }
+//   })
+// })
+
+// bot.on('message', async function (msg) {
+//   const from = msg.text.substr(1) // /3663493320, drop "/"
+//   if (/^\d+$/.test(from)) {
+//     const key = `device:${from}`
+//     const redis = await connectToRedis()
+//     // console.log(await redis.keys('device:' + from))
+//     redis.hGetAll(key).then((answer) => {
+//       if (answer?.user) {
+//         console.log(answer)
+//         const userData = JSON.parse(answer.user)
+//         // const positionData = JSON.parse(answer.position)
+
+//         if (userData && userData.data && userData.data.longName) {
+//           console.log(userData, answer.timestamp, timeAgo.format(new Date(answer.timestamp).getTime()))
+//           msg.reply('longName: ' + userData.data.longName + ' (Last message recived: ' + timeAgo.format(new Date(answer.timestamp).getTime()) + ')')
+//         }
+//       } else { msg.reply('404 Not Found') }
+//     })
+//   } else {
+//     await msg.reply('Пожалуйста введите ID ноды цифрами! Например 999999999')
+//   }
+// })
+
+// bot.start(ctx => {
+//   ctx.reply('Welcome, bro')
+// })
+// process.once('SIGINT', () => bot.stop('SIGINT'))
+// process.once('SIGTERM', () => bot.stop('SIGTERM'))
+
+// bot.launch()
+
+// /// /////////////////////////// telegramm end

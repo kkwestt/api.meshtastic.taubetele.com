@@ -23,7 +23,7 @@ const connectToProtobufServer = (server, callback) => {
 
   // console.log(connection)
 
-  void connection.connect({
+  connection.connect({
     address: server.address,
     fetchInterval: 3000
   })
@@ -31,18 +31,23 @@ const connectToProtobufServer = (server, callback) => {
   listenToProtobufEvents(server, connection, callback)
 }
 
-const handleProtobufServiceEnvelopePacket = (channel, user, device, arrayBuffer) => {
+const handleProtobufServiceEnvelopePacket = (server, channel, user, device, arrayBuffer) => {
   try {
     const serviceEnvelope = Protobuf.Mqtt.ServiceEnvelope.fromBinary(arrayBuffer)
     const meshPacket = serviceEnvelope.packet
     // console.log(serviceEnvelope.packet)
+    const { channelId, gatewayId } = serviceEnvelope
     const { rxSnr, hopLimit, wantAck, rxRssi } = meshPacket
 
     if (meshPacket.payloadVariant.case === 'decoded') {
+      if (gatewayId === '!088aa170') {
+        console.log('raw message', server.address, channel, user, serviceEnvelope, { channelId, gatewayId })
+      }
+
       // добавил в iMeshDevice:handleDecodedPacket параметр additionalInfo
       // если библиотеку обновить, то ничего страшного не случится
       // для raw mqtt пакетов не будут доступны mqttChannel и mqttUser
-      device.handleDecodedPacket(meshPacket.payloadVariant.value, meshPacket, { mqttChannel: channel, mqttUser: user, rxSnr, hopLimit, wantAck, rxRssi }) // hopStart viaMqtt priority
+      device.handleDecodedPacket(meshPacket.payloadVariant.value, meshPacket, { mqttChannel: channel, mqttUser: user, rxSnr, hopLimit, wantAck, rxRssi, gatewayId }) // hopStart viaMqtt priority
       // console.warn(rxSnr)
     } else {
       // console.warn('!!! not decoded', JSON.stringify(serviceEnvelope, null, 2))
@@ -59,14 +64,20 @@ const connectToMqtt = (server, callback) => {
 
   listenToProtobufEvents(server, device, callback)
 
-  // todo add reconnection
-  const client = mqtt.connect(server.address)
+  const client = mqtt.connect(server.address, {
+    clientId: 'mqtt_' + Math.random().toString(16).substr(2, 8)
+  })
 
   client.on('connect', () => {
-    client.subscribe('#', (err) => {
-      if (!err) {
-        console.debug(`Connected to ${server.name}`)
-      }
+    client.subscribe(['msh/+/2/map/',
+      'msh/+/2/e/+/+',
+      'msh/+/+/2/map/',
+      'msh/+/+/2/e/+/+',
+      'msh/+/+/+/2/map/',
+      'msh/+/+/+/2/e/+/+',
+      'msh/+/+/+/+/2/map/',
+      'msh/+/+/+/+/2/e/+/+'], (err) => {
+      if (!err) console.debug(`Connected to ${server.name}`)
     })
   })
 
@@ -74,24 +85,23 @@ const connectToMqtt = (server, callback) => {
     try {
       const [, , type, channel, user] = topic.split('/')
 
-      // console.log(type, topic)
-
       if (type === 'stat') {
         return
       }
 
       if (type === 'json') {
+        console.log('json message', topic, JSON.parse(payload.toString()), raw)
         callback(server, channel, user, 'json', 'json', JSON.parse(payload.toString()))
         return
       }
 
-      handleProtobufServiceEnvelopePacket(channel, user, device, new Uint8Array(payload))
+      handleProtobufServiceEnvelopePacket(server, channel, user, device, new Uint8Array(payload))
     } catch {
     }
   })
 
   client.on('error', (error) => {
-    console.error(error)
+    console.error('error', server, error)
   })
 }
 

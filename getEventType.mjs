@@ -14,9 +14,9 @@ export function getEventType (eventName, eventType, event) {
 
   // console.log(eventName, event)
 
-  if (event.from === 4184512284 || event.from === 7 || event.from === 4) return // baned guy's
+  if (event.from === 4184512284 || event.from === 220300 || event.from === 7 || event.from === 4) return // baned guy's
 
-  if (event.from <= 100000) { // фильтр от бракованных нод таких как 4, 554 и т д. Поле from долно быть длинным 6-9 знаков.
+  if (event.from < 100000) { // фильтр от бракованных нод таких как 4, 554 и т д. Поле from долно быть длинным 6-9 знаков.
     // console.log('ERROR Message from brocken ID:', event.from, event)
     return
   }
@@ -46,10 +46,17 @@ export function getEventType (eventName, eventType, event) {
   }
   if (eventName === 'onMessagePacket') {
     type = 'message'
+    // console.log(eventName, event)
   }
 
   // if (eventName === 'deviceMetadata') {
-  //   type = 'deviceMetadata'
+  //   console.log('!!! deviceMetadata', event)
+  // type = 'deviceMetadata'
   // }
+  // if (eventName === 'routeDiscovery') {
+  //   console.log('!!! routeDiscovery', event)
+  // type = 'routeDiscovery'
+  // }
+
   return type
 }
