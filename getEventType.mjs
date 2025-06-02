@@ -1,62 +1,74 @@
-function lowerCaseFirstLetter (string) {
+const BANNED_IDS = new Set([4184512284, 220300, 7, 4])
+const MIN_VALID_ID = 10000
+
+function lowerCaseFirstLetter(string) {
   return string.charAt(0).toLowerCase() + string.slice(1)
 }
 
-// базовая фильтрация типов и нейминг
-// в идеале, не нужно подписавыться на mqtt.json и подписавывать только на необходимые callback из meshtastic.js
-
-export function getEventType (eventName, eventType, event) {
+/**
+ * Filters and determines event types with improved validation
+ * @param {string} eventName - Name of the event
+ * @param {string} eventType - Type of the event
+ * @param {Object} event - Event data
+ * @returns {string|null} - Event type or null if filtered out
+ */
+export function getEventType(eventName, eventType, event) {
+  // Filter JSON events
   if (eventType === 'json') {
-    // if (event.type === '') return
-    // console.log(eventName, event)
-    return
+    return null
   }
 
-  // console.log(eventName, event)
-
-  if (event.from === 4184512284 || event.from === 220300 || event.from === 7 || event.from === 4) return // baned guy's
-
-  if (event.from < 100000) { // фильтр от бракованных нод таких как 4, 554 и т д. Поле from долно быть длинным 6-9 знаков.
-    // console.log('ERROR Message from brocken ID:', event.from, event)
-    return
+  // Validate event object
+  if (!event || typeof event !== 'object') {
+    return null
   }
 
+  const { from } = event
+
+  // Filter banned IDs
+  if (BANNED_IDS.has(from)) {
+    return null
+  }
+
+  // Filter invalid IDs (should be 6-9 digits)
+  if (from < MIN_VALID_ID) {
+    console.warn(`Invalid ID detected: ${from}`)
+    return null
+  }
+
+  // Filter routing events (ping responses)
   if (eventType === 'routing') {
-    // это пинг откого и кого, ответ либо  {"errorReason":"NO_RESPONSE"} либо {"errorReason":"NONE"}
-    // тут также есть hop и rssi+snr
-    return
+    return null
   }
 
+  // Filter store and forward packets
   if (eventName === 'onStoreForwardPacket') {
-    return
+    return null
   }
 
+  // Determine event type
   let type = lowerCaseFirstLetter(eventType)
 
-  if (event?.data?.variant?.case === 'deviceMetrics') {
+  // Handle specific event variants
+  const variantCase = event?.data?.variant?.case
+  if (variantCase === 'deviceMetrics') {
     type = 'deviceMetrics'
-  }
-
-  if (event?.data?.variant?.case === 'environmentMetrics') {
+  } else if (variantCase === 'environmentMetrics') {
     type = 'environmentMetrics'
   }
 
-  if (eventName === 'onRangeTestPacket') {
-    type = 'rangeTest'
+  // Handle specific event names
+  switch (eventName) {
+    case 'onRangeTestPacket':
+      type = 'rangeTest'
+      break
+    case 'onMessagePacket':
+      type = 'message'
+      break
+    default:
+      // Keep the determined type
+      break
   }
-  if (eventName === 'onMessagePacket') {
-    type = 'message'
-    // console.log(eventName, event)
-  }
-
-  // if (eventName === 'deviceMetadata') {
-  //   console.log('!!! deviceMetadata', event)
-  // type = 'deviceMetadata'
-  // }
-  // if (eventName === 'routeDiscovery') {
-  //   console.log('!!! routeDiscovery', event)
-  // type = 'routeDiscovery'
-  // }
 
   return type
 }

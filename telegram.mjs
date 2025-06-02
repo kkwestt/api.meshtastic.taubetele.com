@@ -1,74 +1,44 @@
 import { Telegraf } from 'telegraf'
 import { botSettings } from './config.mjs'
 
-import TimeAgo from 'javascript-time-ago'
-import en from 'javascript-time-ago/locale/en'
-
-TimeAgo.addDefaultLocale(en) // Create formatter (English).
-// const timeAgo = new TimeAgo('en-US')
-
 const bot = new Telegraf(botSettings.BOT_TOKEN)
 
 bot.catch((err, ctx) => {
-  console.log(`!!! Bot Catched ERROR: ${err}`)
+  console.error('Telegram Bot Error:', err.message)
 })
-
-// bot.command('inline', (ctx) => {
-//   ctx.reply('Hi there!', {
-//     reply_markup: {
-//       inline_keyboard: [
-//         /* Inline buttons. 2 side-by-side */
-//         [{ text: 'Button 1', callback_data: 'btn-1' }, { text: 'Button 2', callback_data: 'btn-2' }],
-
-//         /* One button */
-//         [{ text: 'Next', callback_data: 'next' }],
-
-//         /* Also, we can have URL buttons. */
-//         [{ text: 'Open in browser', url: 'telegraf.js.org' }]
-//       ]
-//     }
-//   })
-// })
-
-// bot.on('message', async function (msg) {
-//   const from = msg.text.substr(1) // /3663493320, drop "/"
-//   if (/^\d+$/.test(from)) {
-//     const key = `device:${from}`
-//     const redis = await connectToRedis()
-//     // console.log(await redis.keys('device:' + from))
-//     redis.hGetAll(key).then((answer) => {
-//       if (answer?.user) {
-//         console.log(answer)
-//         const userData = JSON.parse(answer.user)
-//         // const positionData = JSON.parse(answer.position)
-
-//         if (userData && userData.data && userData.data.longName) {
-//           console.log(userData, answer.timestamp, timeAgo.format(new Date(answer.timestamp).getTime()))
-//           msg.reply('longName: ' + userData.data.longName + ' (Last message recived: ' + timeAgo.format(new Date(answer.timestamp).getTime()) + ')')
-//         }
-//       } else { msg.reply('404 Not Found') }
-//     })
-//   } else {
-//     await msg.reply('Пожалуйста введите ID ноды цифрами! Например 999999999')
-//   }
-// })
 
 bot.start(ctx => {
-  ctx.reply('Welcome, bro')
+  ctx.reply('Meshtastic Monitor Bot is online! 🛰️')
 })
 
-process.once('SIGINT', () => bot.stop('SIGINT'))
-process.once('SIGTERM', () => bot.stop('SIGTERM'))
+// Graceful shutdown
+const gracefulShutdown = () => {
+  console.log('Shutting down Telegram bot...')
+  bot.stop()
+}
 
-bot.launch()
+process.once('SIGINT', gracefulShutdown)
+process.once('SIGTERM', gracefulShutdown)
+
+// Launch bot with error handling
+bot.launch().catch(error => {
+  console.error('Failed to launch Telegram bot:', error.message)
+})
 
 export function sendTelegramMessage (data) {
-  console.log('!!!', data)
-  if (botSettings.ENABLE) {
-    bot.telegram.sendMessage(
-      botSettings.CHANNEL_ID,
-      data
-    )
-    // console.log('✉️ ' + longName + ': ' + event.data)
-  }
+  if (!botSettings.ENABLE) return
+
+  console.log('Sending Telegram message:', data)
+
+  bot.telegram.sendMessage(botSettings.CHANNEL_ID, data)
+    .then((message) => {
+      // Auto-delete message after 72 minutes (4320000ms)
+      setTimeout(() => {
+        bot.telegram.deleteMessage(botSettings.CHANNEL_ID, message.message_id)
+          .catch(error => console.error('Failed to delete message:', error.message))
+      }, 4320000)
+    })
+    .catch(error => {
+      console.error('Failed to send Telegram message:', error.message)
+    })
 }
