@@ -10,17 +10,18 @@ const listenToProtobufEvents = (server, connection, callback) => {
 
   events.forEach(eventName => {
     connection.events[eventName].subscribe((event) => {
-      try {
-        const { mqttChannel, mqttUser, ...rest } = event
-        const eventType = event.data?.constructor?.name || 'unknown'
-        callback(server, mqttChannel, mqttUser, eventName, eventType, rest)
-      } catch (error) {
-        // Filter out common mesh network errors
-        if (!shouldLogError(error.message)) {
-          return
-        }
-        console.error(`Error in protobuf event ${eventName}:`, error.message)
-      }
+    try {
+    const { mqttChannel, mqttUser, ...rest } = event
+    const eventType = event.data?.constructor?.name || 'unknown'
+    // Передаем полный топик как mqttChannel
+    callback(server, mqttChannel, mqttUser, eventName, eventType, rest)
+    } catch (error) {
+    // Filter out common mesh network errors
+    if (!shouldLogError(error.message)) {
+    return
+    }
+    console.error(`Error in protobuf event ${eventName}:`, error.message)
+    }
     })
   })
 }
@@ -49,14 +50,14 @@ const connectToProtobufServer = (server, callback) => {
 
   try {
     connection.connect({
-      address: server.address,
-      fetchInterval: 3000
+    address: server.address,
+    fetchInterval: 3000
     })
     listenToProtobufEvents(server, connection, callback)
     console.log(`Connected to protobuf server: ${server.name}`)
   } catch (error) {
     if (shouldLogError(error.message)) {
-      console.error(`Failed to connect to protobuf server ${server.name}:`, error.message)
+    console.error(`Failed to connect to protobuf server ${server.name}:`, error.message)
     }
   }
 }
@@ -77,17 +78,17 @@ const isValidPacket = (arrayBuffer) => {
   }
 }
 
-const handleProtobufServiceEnvelopePacket = (server, channel, user, device, arrayBuffer) => {
+const handleProtobufServiceEnvelopePacket = (server, fullTopic, user, device, arrayBuffer) => {
   try {
     // Validate packet before processing
     if (!isValidPacket(arrayBuffer)) {
-      return
+    return
     }
 
     const serviceEnvelope = Protobuf.Mqtt.ServiceEnvelope.fromBinary(arrayBuffer)
 
     if (!serviceEnvelope?.packet) {
-      return
+    return
     }
 
     const meshPacket = serviceEnvelope.packet
@@ -95,34 +96,34 @@ const handleProtobufServiceEnvelopePacket = (server, channel, user, device, arra
     const { rxSnr, hopLimit, wantAck, rxRssi, from, id } = meshPacket
 
     if (meshPacket.payloadVariant?.case === 'decoded') {
-      // Debug logging for specific gateway
-      if (gatewayId === '!088aa170') {
-        console.log('Raw message from gateway:', server.address, channel, user, { channelId, gatewayId })
-      }
+    // Debug logging for specific gateway
+    if (gatewayId === '!088aa170') {
+    console.log('Raw message from gateway:', server.address, fullTopic, user, { channelId, gatewayId })
+    }
 
-      const additionalInfo = {
-        mqttChannel: channel,
-        mqttUser: user,
-        rxSnr,
-        hopLimit,
-        wantAck,
-        rxRssi,
-        gatewayId
-      }
+    const additionalInfo = {
+    mqttChannel: fullTopic, // Передаем полный топик
+    mqttUser: user,
+    rxSnr,
+    hopLimit,
+    wantAck,
+    rxRssi,
+    gatewayId
+    }
 
-      try {
-        device.handleDecodedPacket(meshPacket.payloadVariant.value, meshPacket, additionalInfo)
-      } catch (handleError) {
-        // Suppress common mesh network errors
-        if (shouldLogError(handleError.message)) {
-          console.error(`Error handling decoded packet ${id || from || 'unknown'}:`, handleError.message)
-        }
-      }
+    try {
+    device.handleDecodedPacket(meshPacket.payloadVariant.value, meshPacket, additionalInfo)
+    } catch (handleError) {
+    // Suppress common mesh network errors
+    if (shouldLogError(handleError.message)) {
+    console.error(`Error handling decoded packet ${id || from || 'unknown'}:`, handleError.message)
+    }
+    }
     }
   } catch (error) {
     // Suppress common protobuf parsing errors
     if (shouldLogError(error.message)) {
-      console.error('Error handling protobuf service envelope packet:', error.message)
+    console.error('Error handling protobuf service envelope packet:', error.message)
     }
   }
 }
@@ -139,14 +140,14 @@ const connectToMqtt = (server, callback) => {
   console.error = (...args) => {
     const message = args.join(' ')
     if (shouldLogError(message)) {
-      originalConsoleError.apply(console, args)
+    originalConsoleError.apply(console, args)
     }
   }
 
   console.warn = (...args) => {
     const message = args.join(' ')
     if (shouldLogError(message)) {
-      originalConsoleWarn.apply(console, args)
+    originalConsoleWarn.apply(console, args)
     }
   }
 
@@ -163,88 +164,90 @@ const connectToMqtt = (server, callback) => {
 
   const createConnection = () => {
     const client = mqtt.connect(server.address, {
-      clientId,
-      reconnectPeriod: RECONNECT_DELAY,
-      connectTimeout: 30000,
-      keepalive: 60
+    clientId,
+    reconnectPeriod: RECONNECT_DELAY,
+    connectTimeout: 30000,
+    keepalive: 60
     })
 
     const topics = [
-      'msh/+/2/map/',
-      'msh/+/2/e/+/+',
-      'msh/+/+/2/map/',
-      'msh/+/+/2/e/+/+',
-      'msh/+/+/+/2/map/',
-      'msh/+/+/+/2/e/+/+',
-      'msh/+/+/+/+/2/map/',
-      'msh/+/+/+/+/2/e/+/+'
+    'msh/+/2/map/',
+    'msh/+/2/e/+/+',
+    'msh/+/+/2/map/',
+    'msh/+/+/2/e/+/+',
+    'msh/+/+/+/2/map/',
+    'msh/+/+/+/2/e/+/+',
+    'msh/+/+/+/+/2/map/',
+    'msh/+/+/+/+/2/e/+/+'
     ]
 
     client.on('connect', () => {
-      console.log(`Connected to MQTT server: ${server.name}`)
-      reconnectAttempts = 0
+    console.log(`Connected to MQTT server: ${server.name}`)
+    reconnectAttempts = 0
 
-      client.subscribe(topics, (err) => {
-        if (!err) {
-          console.log(`Subscribed to topics on ${server.name}`)
-        } else {
-          console.error(`Subscription error on ${server.name}:`, err.message)
-        }
-      })
+    client.subscribe(topics, (err) => {
+    if (!err) {
+    console.log(`Subscribed to topics on ${server.name}`)
+    } else {
+    console.error(`Subscription error on ${server.name}:`, err.message)
+    }
+    })
     })
 
     client.on('message', (topic, payload, packet) => {
-      try {
-        const topicParts = topic.split('/')
-        if (topicParts.length < 3) return
+    try {
+    const topicParts = topic.split('/')
+    if (topicParts.length < 3) return
 
-        const [, , type, channel, user] = topicParts
+    const [, , type, channel, user] = topicParts
 
-        // Skip status messages
-        if (type === 'stat') return
+    // Skip status messages
+    if (type === 'stat') return
 
-        // Handle JSON messages
-        if (type === 'json') {
-          try {
-            const jsonData = JSON.parse(payload.toString())
-            console.log('JSON message:', topic, jsonData)
-            callback(server, channel, user, 'json', 'json', jsonData)
-          } catch (parseError) {
-            console.error('Failed to parse JSON message:', parseError.message)
-          }
-          return
-        }
+    // Handle JSON messages
+    if (type === 'json') {
+    try {
+    const jsonData = JSON.parse(payload.toString())
+    console.log('JSON message:', topic, jsonData)
+    // Передаем полный топик вместо channel
+    callback(server, topic, user, 'json', 'json', jsonData)
+    } catch (parseError) {
+    console.error('Failed to parse JSON message:', parseError.message)
+    }
+    return
+    }
 
-        // Handle protobuf messages
-        if (payload && payload.length > 0) {
-          handleProtobufServiceEnvelopePacket(server, channel, user, device, new Uint8Array(payload))
-        }
-      } catch (error) {
-        // Only log significant errors
-        if (shouldLogError(error.message)) {
-          console.error(`Error processing message from ${server.name}:`, error.message)
-        }
-      }
+    // Handle protobuf messages
+    if (payload && payload.length > 0) {
+    // Передаем полный топик вместо channel
+    handleProtobufServiceEnvelopePacket(server, topic, user, device, new Uint8Array(payload))
+    }
+    } catch (error) {
+    // Only log significant errors
+    if (shouldLogError(error.message)) {
+    console.error(`Error processing message from ${server.name}:`, error.message)
+    }
+    }
     })
 
     client.on('error', (error) => {
-      console.error(`MQTT error on ${server.name}:`, error.message)
+    console.error(`MQTT error on ${server.name}:`, error.message)
 
-      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        reconnectAttempts++
-        console.log(`Attempting to reconnect to ${server.name} (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
-      } else {
-        console.error(`Max reconnection attempts reached for ${server.name}`)
-        client.end()
-      }
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    reconnectAttempts++
+    console.log(`Attempting to reconnect to ${server.name} (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`)
+    } else {
+    console.error(`Max reconnection attempts reached for ${server.name}`)
+    client.end()
+    }
     })
 
     client.on('close', () => {
-      console.log(`Connection closed to ${server.name}`)
+    console.log(`Connection closed to ${server.name}`)
     })
 
     client.on('offline', () => {
-      console.log(`Client offline for ${server.name}`)
+    console.log(`Client offline for ${server.name}`)
     })
 
     return client
@@ -258,20 +261,20 @@ export const listenToEvents = async (serversConfig, callback) => {
 
   const connections = serversConfig.map(server => {
     try {
-      switch (server.type) {
-        case 'mqtt':
-          return connectToMqtt(server, callback)
-        case 'protobuf':
-          return connectToProtobufServer(server, callback)
-        default:
-          console.warn('Unsupported server config:', server)
-          return null
-      }
+    switch (server.type) {
+    case 'mqtt':
+    return connectToMqtt(server, callback)
+    case 'protobuf':
+    return connectToProtobufServer(server, callback)
+    default:
+    console.warn('Unsupported server config:', server)
+    return null
+    }
     } catch (error) {
-      if (shouldLogError(error.message)) {
-        console.error(`Failed to connect to ${server.name}:`, error.message)
-      }
-      return null
+    if (shouldLogError(error.message)) {
+    console.error(`Failed to connect to ${server.name}:`, error.message)
+    }
+    return null
     }
   }).filter(Boolean)
 
@@ -279,9 +282,9 @@ export const listenToEvents = async (serversConfig, callback) => {
   const gracefulShutdown = () => {
     console.log('Shutting down connections...')
     connections.forEach(client => {
-      if (client && typeof client.end === 'function') {
-        client.end()
-      }
+    if (client && typeof client.end === 'function') {
+    client.end()
+    }
     })
   }
 
